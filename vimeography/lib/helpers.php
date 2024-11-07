@@ -53,7 +53,7 @@ class Vimeography_Helpers
       $item = $this->format_video_thumbnails($item);
 
       // Linkify any URLs in the description
-      if ($should_linkify_descriptions) {
+      if ($should_linkify_descriptions && $item->description) {
         $item->description = $this->link_urls(nl2br($item->description));
       }
 

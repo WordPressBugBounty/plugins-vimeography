@@ -17,7 +17,7 @@ use Vimeo\Vimeo;
  *   See the License for the specific language governing permissions and
  *   limitations under the License.
  */
-ini_set('display_errors', 'On');
+ini_set('display_errors', 'Off');
 error_reporting(E_ALL);
 
 $config = require(__DIR__ . '/init.php');
@@ -48,7 +48,6 @@ if (empty($image_path)) {
 // Find the pictures URI. This is also the URI that you can query to view all pictures associated with this resource.
 $resource = $lib->request($resource_uri);
 if ($resource['status'] != 200) {
-	var_dump($resource);
 	throw new Exception('Could not locate the requested resource uri [' . $resource_uri . ']');
 }
 
@@ -58,4 +57,3 @@ if (empty($resource['body']['metadata']['connections']['pictures']['uri'])) {
 
 // The third parameter dictates whether the picture should become the default, or just be part of the collection of pictures
 $response = $lib->uploadImage($resource['body']['metadata']['connections']['pictures']['uri'], $image_path, true);
-var_dump($response);
