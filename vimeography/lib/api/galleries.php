@@ -173,7 +173,7 @@ class Galleries extends \WP_REST_Controller
             'type' => 'integer',
             'sanitize_callback' => 'absint',
             'validate_callback' => function ($value, $request, $param) {
-              if ($value > 25) {
+              if ($value > 25 && !is_plugin_active('vimeography-pro/vimeography-pro.php')) {
                 return false;
               }
             }
