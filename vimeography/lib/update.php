@@ -88,13 +88,21 @@ class Vimeography_Update {
       return;
     }
 
+    // Lookup the product name associated with this license key before
+    // attempting activation. This allows activate_license to succeed even on
+    // EDD servers that require item_name (i.e. without EDD_BYPASS_NAME_CHECK).
+    $item_name = $this->_vimeography_lookup_item_name( $key );
+
     // Data to send to the API
     $api_params = array(
       'edd_action' => 'activate_license',
       'license'    => $key,
-      //'item_name'  => urlencode( $this->item_name ), // the name of our product in EDD **IMPORTANT need to set EDD_BYPASS_NAME_CHECK on vimeography.com to true if omitting
       'url'        => urlencode( home_url() ),
     );
+
+    if ( ! empty( $item_name ) ) {
+      $api_params['item_name'] = urlencode( $item_name );
+    }
 
     // Call the API
     $response = wp_remote_get(
@@ -133,6 +141,54 @@ class Vimeography_Update {
           throw new Exception( wp_kses_post(__('Unknown error: ' . $license_data->error, 'vimeography') ));
       }
     }
+  }
+
+  /**
+   * Ask the Vimeography EDD endpoint which product is associated with a given
+   * license key.
+   *
+   * Implementation note: the `check_license` endpoint does not return the
+   * product name on Vimeography's server (item_name is empty). However, calling
+   * `activate_license` *without* the `url` parameter triggers a `missing_url`
+   * error response that includes both `item_name` and `vimeography_product_name`
+   * in its payload — and does NOT consume an activation, since the request
+   * aborts on the server before the site count is incremented.
+   *
+   * @access  protected
+   * @param   string $key  Normalized license key.
+   * @return  string       Product name, or empty string if it could not be resolved.
+   */
+  protected function _vimeography_lookup_item_name( $key ) {
+    $response = wp_remote_get(
+      add_query_arg( array(
+        'edd_action' => 'activate_license',
+        'license'    => $key,
+      ), $this->_endpoint ),
+      array(
+        'timeout'   => 15,
+        'sslverify' => false,
+      )
+    );
+
+    if ( is_wp_error( $response ) ) {
+      return '';
+    }
+
+    $data = json_decode( wp_remote_retrieve_body( $response ) );
+
+    if ( ! is_object( $data ) ) {
+      return '';
+    }
+
+    if ( ! empty( $data->item_name ) ) {
+      return $data->item_name;
+    }
+
+    if ( ! empty( $data->vimeography_product_name ) ) {
+      return $data->vimeography_product_name;
+    }
+
+    return '';
   }
 
   /**
