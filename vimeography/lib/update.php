@@ -71,6 +71,10 @@ class Vimeography_Update {
     // Add activation key message for plugins with missing keys
     add_action( 'load-plugins.php', array( $this, 'vimeography_check_for_missing_activation_keys' ) );
 
+    // Force EDD Software Licensing to ignore the X-Accel-Redirect header
+    // (évite les problèmes de téléchargement de mises à jour derrière certains serveurs).
+    add_filter( 'edd_ignore_x_accel_redirect', '__return_true' );
+
 	}
 
   /**
