@@ -113,7 +113,7 @@ class Vimeography_Update {
       add_query_arg( $api_params, $this->_endpoint),
       array(
         'timeout'   => 15,
-        'sslverify' => false
+        'sslverify' => true
       )
     );
 
@@ -125,12 +125,17 @@ class Vimeography_Update {
     // Decode license data
     $license_data = json_decode( wp_remote_retrieve_body( $response ) );
 
-    if ( $license_data->success AND $license_data->license == 'valid' ) {
+    if ( ! is_object( $license_data ) ) {
+      throw new Exception( wp_kses_post(__('The license server returned an invalid response.', 'vimeography') ));
+    }
+
+    if ( ! empty( $license_data->success ) AND isset( $license_data->license ) AND $license_data->license === 'valid' ) {
       $this->_vimeography_add_activation_key( $key, $license_data );
       return TRUE;
     } else {
+      $error = isset( $license_data->error ) ? $license_data->error : '';
       // Add failed message
-      switch ($license_data->error) {
+      switch ($error) {
         case 'missing': case 'revoked':
           throw new Exception( wp_kses_post(__('That license key could not be found in our system.', 'vimeography') ));
         case 'no_activations_left':
@@ -142,7 +147,7 @@ class Vimeography_Update {
         case 'license_not_activable':
           throw new Exception( wp_kses_post(__('Looks like you are trying to activate your bundle license. Please activate each of the products in your bundle separately by using their respective individual licenses.', 'vimeography') ));
         default:
-          throw new Exception( wp_kses_post(__('Unknown error: ' . $license_data->error, 'vimeography') ));
+          throw new Exception( wp_kses_post(__('Unknown error: ' . $error, 'vimeography') ));
       }
     }
   }
@@ -170,7 +175,7 @@ class Vimeography_Update {
       ), $this->_endpoint ),
       array(
         'timeout'   => 15,
-        'sslverify' => false,
+        'sslverify' => true,
       )
     );
 
@@ -217,7 +222,7 @@ class Vimeography_Update {
       add_query_arg( $api_params, $this->_endpoint ),
       array(
         'timeout'   => 15,
-        'sslverify' => false
+        'sslverify' => true
       )
     );
 
@@ -232,7 +237,7 @@ class Vimeography_Update {
     // Remove the key even if deactivation fails
     $this->_vimeography_remove_activation_key( $key );
 
-    if ( ! $license_data->success ) {
+    if ( ! is_object( $license_data ) || empty( $license_data->success ) ) {
       throw new Exception( wp_kses_post(__('That license key has been removed from your site, but could not be deactivated in our system.', 'vimeography')) );
     }
   }
@@ -256,7 +261,7 @@ class Vimeography_Update {
       add_query_arg( $api_params, $this->_endpoint ),
       array(
         'timeout'   => 15,
-        'sslverify' => false
+        'sslverify' => true
       )
     );
 
@@ -341,14 +346,36 @@ class Vimeography_Update {
    * @return bool          TRUE if successful, FALSE if failed
    */
   protected function _vimeography_add_activation_key( $key, $license_data ) {
+    if ( ! is_object( $license_data ) ) {
+      return FALSE;
+    }
+
+    $plugin_slug = isset( $license_data->vimeography_plugin_slug )
+      ? sanitize_key( (string) $license_data->vimeography_plugin_slug )
+      : '';
+
+    if ( empty( $plugin_slug ) ) {
+      return FALSE;
+    }
+
     $entry = new stdClass();
-    $entry->activation_key = $key;
-    $entry->plugin_name    = $license_data->vimeography_plugin_slug;
-    $entry->product_name   = $license_data->vimeography_product_name;
-    $entry->expires        = $license_data->expires;
-    $entry->status         = $license_data->license;
-    $entry->limit          = $license_data->license_limit;
-    $entry->activations_left = $license_data->activations_left;
+    $entry->activation_key   = sanitize_text_field( (string) $key );
+    $entry->plugin_name      = $plugin_slug;
+    $entry->product_name     = isset( $license_data->vimeography_product_name )
+      ? sanitize_text_field( (string) $license_data->vimeography_product_name )
+      : '';
+    $entry->expires          = isset( $license_data->expires )
+      ? sanitize_text_field( (string) $license_data->expires )
+      : '';
+    $entry->status           = isset( $license_data->license )
+      ? sanitize_key( (string) $license_data->license )
+      : '';
+    $entry->limit            = isset( $license_data->license_limit )
+      ? intval( $license_data->license_limit )
+      : 0;
+    $entry->activations_left = isset( $license_data->activations_left )
+      ? intval( $license_data->activations_left )
+      : 0;
 
     $this->_activation_keys[] = $entry;
     return update_site_option('vimeography_activation_keys', array_values( $this->_activation_keys ) );
@@ -449,7 +476,16 @@ class Vimeography_Update {
    * @return  string
    */
   protected function _vimeography_get_plugin_path( $plugin_name ) {
-    //return str_replace('vimeography/', trailingslashit($plugin_name), VIMEOGRAPHY_PATH);
+    // Defense in depth: even though $plugin_name is stored via sanitize_key()
+    // in _vimeography_add_activation_key(), reject anything that isn't a
+    // strict plugin slug here to prevent any form of path traversal on the
+    // WPMU_PLUGIN_DIR / WP_PLUGIN_DIR concatenation below.
+    $plugin_name = (string) $plugin_name;
+
+    if ( ! preg_match( '/^[a-z0-9][a-z0-9_-]*$/', $plugin_name ) ) {
+      return FALSE;
+    }
+
     $basename = '/' . trailingslashit( $plugin_name ) . $plugin_name . '.php';
 
     if ( ! is_file( $dir = WPMU_PLUGIN_DIR . $basename ) ) {
